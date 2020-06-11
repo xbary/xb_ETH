@@ -1,11 +1,13 @@
 #include <xb_board.h>
 #include "xb_ETH.h"
-#ifdef XB_PING
-#include <xb_PING.h>
-#endif
 #include <SPI.h>
 #include <Ethernet.h>
 #include <utility/w5100.h>
+
+#ifdef XB_OTA
+#include <Update.h>
+#include <ArduinoOTA.h>
+#endif
 
 
 #ifdef XB_GUI
@@ -16,7 +18,10 @@ TGADGETInputDialog* ETH_inputdialoghandle1_static_ip;
 TGADGETInputDialog* ETH_inputdialoghandle2_mask_ip;
 TGADGETInputDialog* ETH_inputdialoghandle3_gateway_ip;
 TGADGETInputDialog* ETH_inputdialoghandle4_dns_ip;
-
+#ifdef XB_OTA
+TGADGETInputDialog* ETH_inputdialoghandle5;
+TGADGETInputDialog* ETH_inputdialoghandle6;
+#endif
 #endif
 
 
@@ -24,6 +29,13 @@ TNETStatus NETStatus;
 
 typedef enum { efIDLE, efInit, efDeInit, efHandle } TETHFunction;
 TETHFunction ETH_Function;
+
+#ifdef XB_OTA
+#ifdef NO_GLOBAL_ARDUINOOTA
+ArduinoOTAClass* ArduinoOTA;
+#endif
+#endif
+
 
 void NET_Connect()
 {
@@ -53,6 +65,17 @@ IPAddress ETH_Mask;
 IPAddress ETH_Gateway;
 IPAddress ETH_DNS;
 
+#ifdef XB_OTA
+bool CFG_ETH_USEOTA = true;
+
+String CFG_ETH_PSWOTA;
+#ifndef ETH_PORTOTA_DEFAULT
+#define ETH_PORTOTA_DEFAULT 8266
+#endif
+int16_t CFG_ETH_PORTOTA = ETH_PORTOTA_DEFAULT;
+#endif
+
+
 bool ETH_LoadConfig()
 {
 #ifdef XB_PREFERENCES
@@ -63,7 +86,11 @@ bool ETH_LoadConfig()
 		ETH_Mask = (uint32_t)board.PREFERENCES_GetUINT32("Mask", (uint32_t)ETH_Mask);
 		ETH_Gateway = (uint32_t)board.PREFERENCES_GetUINT32("Gateway", (uint32_t)ETH_Gateway);
 		ETH_DNS = (uint32_t)board.PREFERENCES_GetUINT32("DNS", (uint32_t)ETH_DNS);
-
+#ifdef XB_OTA
+		CFG_ETH_USEOTA = board.PREFERENCES_GetBool("USEOTA", CFG_ETH_USEOTA);
+		CFG_ETH_PSWOTA = board.PREFERENCES_GetString("PSWOTA", CFG_ETH_PSWOTA);
+		CFG_ETH_PORTOTA = board.PREFERENCES_GetINT16("PORTOTA", CFG_ETH_PORTOTA);
+#endif
 		board.PREFERENCES_EndSection();
 	}
 	else
@@ -87,7 +114,11 @@ bool ETH_SaveConfig()
 		board.PREFERENCES_PutUINT32("Mask", (uint32_t)ETH_Mask);
 		board.PREFERENCES_PutUINT32("Gateway", (uint32_t)ETH_Gateway);
 		board.PREFERENCES_PutUINT32("DNS", (uint32_t)ETH_DNS);
-
+#ifdef XB_OTA
+		board.PREFERENCES_PutBool("USEOTA", CFG_ETH_USEOTA);
+		board.PREFERENCES_PutString("PSWOTA", CFG_ETH_PSWOTA);
+		board.PREFERENCES_PutINT16("PORTOTA", CFG_ETH_PORTOTA);
+#endif
 		board.PREFERENCES_EndSection();
 	}
 	else 
@@ -127,6 +158,165 @@ String ETH_GetEthernetClientStatus(uint8_t Astatus)
 	}
 	return s;
 }
+//-------------------------------------------------------------------------------------------------------------
+
+#ifdef XB_OTA
+void ETH_OTA_Init(void);
+#endif
+
+void ETH_Reset(void)
+{
+#ifdef XB_OTA
+	if (CFG_ETH_USEOTA)
+	{
+#ifdef NO_GLOBAL_ARDUINOOTA
+		if (ArduinoOTA != NULL)
+		{
+			ArduinoOTA->end();
+			delete(ArduinoOTA);
+			ArduinoOTA = NULL;
+		}
+#else
+		ArduinoOTA.end();
+#endif
+	}
+#endif
+
+#ifdef XB_OTA
+	if (CFG_ETH_USEOTA)
+	{
+		ETH_OTA_Init();
+	}
+#endif
+
+}
+
+#ifdef XB_OTA
+void ETH_OTA_Init(void)
+{
+	if (CFG_ETH_USEOTA)
+	{
+#ifdef NO_GLOBAL_ARDUINOOTA
+		if (ArduinoOTA == NULL)
+		{
+			ArduinoOTA = new ArduinoOTAClass();
+		}
+#endif
+
+		board.Log("OTA Init", true, true);
+		board.Log('.');
+#ifdef NO_GLOBAL_ARDUINOOTA
+		ArduinoOTA->setPort(CFG_ETH_PORTOTA);
+#else
+		ArduinoOTA.setPort(CFG_ETH_PORTOTA);
+#endif
+		board.Log('.');
+#ifdef NO_GLOBAL_ARDUINOOTA
+		ArduinoOTA->setHostname(board.DeviceName.c_str());
+#else
+		ArduinoOTA.setHostname(board.DeviceName.c_str());
+#endif
+		board.Log('.');
+		if (CFG_ETH_PSWOTA != "")
+		{
+#ifdef NO_GLOBAL_ARDUINOOTA
+			ArduinoOTA->setPassword(CFG_ETH_PSWOTA.c_str());
+#else
+			ArduinoOTA.setPassword(CFG_ETH_PSWOTA.c_str());
+#endif
+		}
+		board.Log('.');
+
+
+		//#if !defined(_VMICRO_INTELLISENSE)
+#ifdef NO_GLOBAL_ARDUINOOTA
+		ArduinoOTA->onStart([](void) {
+			board.SendMessage_OTAUpdateStarted();
+			String type;
+			if (ArduinoOTA->getCommand() == U_FLASH)
+				type = "sketch";
+			else
+				type = "filesystem";
+
+			board.Log(String("\n\n[ETH] Start updating " + type).c_str());
+			});
+
+		board.Log('.');
+		ArduinoOTA->onEnd([](void) {
+			board.Log("\n\rEnd");
+			});
+
+		board.Log('.');
+		ArduinoOTA->onProgress([](unsigned int progress, unsigned int total) {
+			board.Blink_RX();
+			board.Blink_TX();
+			board.Blink_Life();
+			board.Log('.');
+			});
+
+		board.Log('.');
+		ArduinoOTA->onError([](ota_error_t error) {
+			Serial.printf(("Error[%u]: "), error);
+			if (error == OTA_AUTH_ERROR) Serial.println(("Auth Failed"));
+			else if (error == OTA_BEGIN_ERROR) Serial.println(("Begin Failed"));
+			else if (error == OTA_CONNECT_ERROR) Serial.println(("Connect Failed"));
+			else if (error == OTA_RECEIVE_ERROR) Serial.println(("Receive Failed"));
+			else if (error == OTA_END_ERROR) Serial.println(("End Failed"));
+			});
+#else
+		ArduinoOTA.onStart([](void) {
+			board.SendMessage_OTAUpdateStarted();
+			String type;
+			if (ArduinoOTA.getCommand() == U_FLASH)
+				type = "sketch";
+			else
+				type = "filesystem";
+
+			board.Log(String("\n\n[ETH] Start updating " + type).c_str());
+			});
+
+		board.Log('.');
+		ArduinoOTA.onEnd([](void) {
+			board.Log("\n\rEnd");
+			});
+
+		board.Log('.');
+		ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+			board.Blink_RX();
+			board.Blink_TX();
+			board.Blink_Life();
+			board.Log('.');
+			});
+
+		board.Log('.');
+		ArduinoOTA.onError([](ota_error_t error) {
+			Serial.printf(("Error[%u]: "), error);
+			if (error == OTA_AUTH_ERROR) Serial.println(("Auth Failed"));
+			else if (error == OTA_BEGIN_ERROR) Serial.println(("Begin Failed"));
+			else if (error == OTA_CONNECT_ERROR) Serial.println(("Connect Failed"));
+			else if (error == OTA_RECEIVE_ERROR) Serial.println(("Receive Failed"));
+			else if (error == OTA_END_ERROR) Serial.println(("End Failed"));
+			});
+#endif
+		board.Log('.');
+#ifdef NO_GLOBAL_ARDUINOOTA
+		ArduinoOTA->begin();
+#else
+		ArduinoOTA.begin();
+#endif
+		board.Log('.');
+		board.Log(("OK"));
+	}
+	else
+	{
+#ifdef NO_GLOBAL_ARDUINOOTA
+		if (ArduinoOTA != NULL) ArduinoOTA->end();
+#else
+		ArduinoOTA.end();
+#endif
+	}
+}
+#endif
 
 //-------------------------------------------------------------------------------------------------------------
 
@@ -212,6 +402,8 @@ uint32_t XB_ETH_DoLoop()
 		NET_Connect();
 		board.Log(String("[Wiznet"+String(W5100.getChip())+"00].OK").c_str());
 		ETH_Function = efHandle;
+
+		ETH_Reset();
 		return 2000;
 	}
 	case efDeInit:
@@ -236,6 +428,17 @@ uint32_t XB_ETH_DoLoop()
 			
 		END_WAITMS(EFH1)
 
+#ifdef XB_OTA
+			if (CFG_ETH_USEOTA)
+			{
+#ifdef NO_GLOBAL_ARDUINOOTA
+				if (ArduinoOTA != NULL) ArduinoOTA->handle();
+#else
+				ArduinoOTA.handle();
+#endif
+			}
+#endif
+
 		return 0;
 	}
 	}
@@ -254,6 +457,10 @@ bool XB_ETH_DoMessage(TMessageBoard* Am)
 		FREEPTR(ETH_inputdialoghandle2_mask_ip);
 		FREEPTR(ETH_inputdialoghandle3_gateway_ip);
 		FREEPTR(ETH_inputdialoghandle4_dns_ip);
+#ifdef XB_OTA
+		FREEPTR(ETH_inputdialoghandle5);
+		FREEPTR(ETH_inputdialoghandle6);
+#endif
 #endif
 		return true;
 	}
@@ -268,6 +475,12 @@ bool XB_ETH_DoMessage(TMessageBoard* Am)
 			GET_TASKSTATUS(efDeInit, 2);
 			GET_TASKSTATUS(efHandle, 2);
 		}
+
+		if (ETH_Function == efHandle)
+		{
+			GET_TASKSTATUS_ADDSTR(" " + Ethernet.localIP().toString());
+		}
+
 		return true;
 	}
 
@@ -345,6 +558,36 @@ bool XB_ETH_DoMessage(TMessageBoard* Am)
 				}
 			}
 			END_MENUITEM()
+#ifdef XB_OTA
+			SEPARATOR_MENUITEM()
+			BEGIN_MENUITEM_CHECKED("USE OTA Update", taLeft, CFG_ETH_USEOTA)
+			{
+				CLICK_MENUITEM()
+				{
+					CFG_ETH_USEOTA = !CFG_ETH_USEOTA;
+					ETH_Reset();
+				}
+			}
+			END_MENUITEM()
+			BEGIN_MENUITEM(String("Set OTA PASSWORD " + (CFG_ETH_PSWOTA == "" ? String("") : String("[****]"))), taLeft)
+			{
+				CLICK_MENUITEM()
+				{
+					ETH_inputdialoghandle5 = GUIGADGET_CreateInputDialog(&XB_ETH_DefTask, 5);
+				}
+			}
+			END_MENUITEM()
+			BEGIN_MENUITEM(String("Set OTA PORT [" + String(CFG_ETH_PORTOTA) + "]"), taLeft)
+			{
+				CLICK_MENUITEM()
+				{
+					ETH_inputdialoghandle6 = GUIGADGET_CreateInputDialog(&XB_ETH_DefTask, 6);
+				}
+			}
+			END_MENUITEM()
+
+#endif
+
 		}
 		END_MENU()
 
@@ -368,6 +611,17 @@ bool XB_ETH_DoMessage(TMessageBoard* Am)
 			{
 			}
 			END_DIALOG()
+#ifdef XB_OTA
+			BEGIN_DIALOG(5, "Edit OTA PASSWORD", "Please input WIFI OTA PASSWORD: ", tivString, 16, &CFG_ETH_PSWOTA)
+			{
+			}
+			END_DIALOG()
+
+			BEGIN_DIALOG_MINMAX(6, "Edit OTA PORT", "Please input SERVER OTA PORT: ", tivInt16, 5, &CFG_ETH_PORTOTA, 1, 32767)
+			{
+			}
+			END_DIALOG()
+#endif
 
 			return true;
 	}
