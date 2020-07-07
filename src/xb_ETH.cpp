@@ -364,7 +364,7 @@ uint32_t XB_ETH_DoLoop()
 		if (ETH_Start)
 		{
 			ETH_Function = efInit;
-			return 3000;
+			return 5000;
 		}
 		return 0;
 	}
@@ -397,20 +397,20 @@ uint32_t XB_ETH_DoLoop()
 			return 2000;
 		}
 		
-		Ethernet.setRetransmissionCount(10);
-		Ethernet.setRetransmissionTimeout(1000);
+		Ethernet.setRetransmissionCount(1);
+		//Ethernet.setRetransmissionTimeout(10);
 		NET_Connect();
 		board.Log(String("[Wiznet"+String(W5100.getChip())+"00].OK").c_str());
 		ETH_Function = efHandle;
 
 		ETH_Reset();
-		return 2000;
+		return 0;
 	}
 	case efDeInit:
 	{
 		NET_Disconnect();
 		ETH_Function = efIDLE;
-		return 2000;
+		return 0;
 	}
 	case efHandle:
 	{
@@ -423,7 +423,7 @@ uint32_t XB_ETH_DoLoop()
 				NET_Disconnect();
 				board.Log(".OK");
 				ETH_Function = efDeInit;
-				return 100;
+				return 0;
 			}
 			
 		END_WAITMS(EFH1)
