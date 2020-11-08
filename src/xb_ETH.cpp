@@ -449,17 +449,17 @@ bool XB_ETH_DoMessage(TMessageBoard* Am)
 {
 	switch (Am->IDMessage)
 	{
-	case IM_FREEPTR:
+	case IM_HANDLEPTR:
 	{
 #ifdef XB_GUI
-		FREEPTR(menuhandle1_mainmenuETH);
-		FREEPTR(ETH_inputdialoghandle1_static_ip);
-		FREEPTR(ETH_inputdialoghandle2_mask_ip);
-		FREEPTR(ETH_inputdialoghandle3_gateway_ip);
-		FREEPTR(ETH_inputdialoghandle4_dns_ip);
+		HANDLEPTR(menuhandle1_mainmenuETH);
+		HANDLEPTR(ETH_inputdialoghandle1_static_ip);
+		HANDLEPTR(ETH_inputdialoghandle2_mask_ip);
+		HANDLEPTR(ETH_inputdialoghandle3_gateway_ip);
+		HANDLEPTR(ETH_inputdialoghandle4_dns_ip);
 #ifdef XB_OTA
-		FREEPTR(ETH_inputdialoghandle5);
-		FREEPTR(ETH_inputdialoghandle6);
+		HANDLEPTR(ETH_inputdialoghandle5);
+		HANDLEPTR(ETH_inputdialoghandle6);
 #endif
 #endif
 		return true;
