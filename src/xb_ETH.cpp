@@ -5,8 +5,9 @@
 #include <utility/w5100.h>
 
 #ifdef XB_OTA
-#include <Update.h>
-#include <ArduinoOTA.h>
+#include "../../../hardware/espressif/esp32master/libraries/Update/src/Update.h"
+#include "../../../hardware/espressif/esp32master/libraries/ArduinoOTA/src/ArduinoOTA.h"
+
 #endif
 
 
